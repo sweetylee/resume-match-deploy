@@ -1,0 +1,19 @@
+[Unit]
+Description=Resume Match Analyzer Streamlit App
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/workspace/projects/workspace/resume-match
+Environment="SILICONFLOW_API_KEY=sk-rhrpdfxbygbyulytpqambaiowiyxjezsmjrlrzbluyvrcvuy"
+Environment="STREAMLIT_SERVER_PORT=8501"
+Environment="STREAMLIT_SERVER_ADDRESS=0.0.0.0"
+Environment="STREAMLIT_SERVER_HEADLESS=true"
+Environment="STREAMLIT_BROWSER_GATHER_USAGE_STATS=false"
+ExecStart=/usr/local/bin/streamlit run /workspace/projects/workspace/resume-match/app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
