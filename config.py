@@ -3,12 +3,37 @@
 """
 import os
 
-# SiliconFlow API 配置
+# ===========================================
+# Embedding 提供商配置
+# 支持两种模式：
+# 1. "coze" - 使用扣子内置 Embedding（推荐，无需额外配置）
+# 2. "siliconflow" - 使用 SiliconFlow API（需要 API Key）
+# ===========================================
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "coze")  # 默认使用扣子
+
+# 扣子 Embedding 配置（OpenAI 兼容格式）
+COZE_EMBEDDING_URL = os.getenv("COZE_INTEGRATION_MODEL_BASE_URL", "")
+COZE_EMBEDDING_MODEL = "doubao-embedding-vision-251215"
+COZE_EMBEDDING_DIM = 2048
+
+# SiliconFlow API 配置（备用）
 SILICONFLOW_API_URL = "https://api.siliconflow.cn/v1"
 SILICONFLOW_EMBEDDING_MODEL = "BAAI/bge-large-zh-v1.5"
-DEFAULT_EMBEDDING_DIM = 1024
+SILICONFLOW_EMBEDDING_DIM = 1024
 
+# 根据提供商选择实际使用的配置
+if EMBEDDING_PROVIDER == "coze":
+    EMBEDDING_API_URL = COZE_EMBEDDING_URL
+    EMBEDDING_MODEL = COZE_EMBEDDING_MODEL
+    DEFAULT_EMBEDDING_DIM = COZE_EMBEDDING_DIM
+else:
+    EMBEDDING_API_URL = SILICONFLOW_API_URL
+    EMBEDDING_MODEL = SILICONFLOW_EMBEDDING_MODEL
+    DEFAULT_EMBEDDING_DIM = SILICONFLOW_EMBEDDING_DIM
+
+# ===========================================
 # 匹配权重配置（可自定义）
+# ===========================================
 DEFAULT_WEIGHTS = {
     "skills": 0.40,
     "experience": 0.35,

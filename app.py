@@ -1,12 +1,13 @@
 """
-Resume Match Analyzer - Streamlit 主应用
+Resume Match Analyzer - Streamlit 主应用 (部署版)
+使用扣子内置 Embedding 模型
 """
 import os
 import streamlit as st
-from config import SUPPORTED_EXTENSIONS, MAX_FILE_SIZE_MB, DEFAULT_WEIGHTS
+from config import SUPPORTED_EXTENSIONS, MAX_FILE_SIZE_MB, DEFAULT_WEIGHTS, EMBEDDING_PROVIDER
 from utils.parser import parse_file
 from utils.cleaner import clean_text
-from utils.embedder import SiliconFlowEmbedder
+from utils.embedder import CozeEmbedder
 from utils.matcher import ResumeMatcher
 
 # 页面配置
@@ -64,23 +65,31 @@ st.markdown("""
 
 
 def get_api_key():
-    """获取 API Key（优先级：Secrets > 环境变量 > Session State）"""
+    """获取 API Key（扣子环境变量优先）"""
     # 1. 检查 Streamlit Secrets（Cloud 部署时使用）
     try:
-        secrets_key = st.secrets.get("SILICONFLOW_API_KEY")
+        secrets_key = st.secrets.get("COZE_WORKLOAD_IDENTITY_API_KEY")
         if secrets_key:
             return secrets_key
     except Exception:
         pass
     
-    # 2. 检查环境变量
-    env_key = os.getenv("SILICONFLOW_API_KEY")
+    # 2. 使用扣子内置的 API Key
+    env_key = os.getenv("COZE_WORKLOAD_IDENTITY_API_KEY")
     if env_key:
         return env_key
     
-    # 3. 检查 session state
-    if "api_key" in st.session_state and st.session_state.api_key:
-        return st.session_state.api_key
+    # 3. 兼容旧版 SiliconFlow（通过环境变量切换）
+    if EMBEDDING_PROVIDER == "siliconflow":
+        try:
+            sf_secrets = st.secrets.get("SILICONFLOW_API_KEY")
+            if sf_secrets:
+                return sf_secrets
+        except Exception:
+            pass
+        sf_key = os.getenv("SILICONFLOW_API_KEY")
+        if sf_key:
+            return sf_key
     
     return None
 
@@ -90,18 +99,18 @@ def render_sidebar():
     with st.sidebar:
         st.header("⚙️ 设置")
         
-        # API Key 输入
-        st.subheader("API 配置")
-        api_key_input = st.text_input(
-            "SiliconFlow API Key",
-            value=st.session_state.get("api_key", ""),
-            type="password",
-            placeholder="sk-...",
-            help="输入你的 SiliconFlow API Key，或设置环境变量 SILICONFLOW_API_KEY"
-        )
+        # 显示当前使用的 Embedding 提供商
+        st.subheader("Embedding 配置")
+        provider_label = "扣子内置 (Coze)" if EMBEDDING_PROVIDER == "coze" else "SiliconFlow"
+        st.info(f"当前使用: **{provider_label}**")
         
-        if api_key_input:
-            st.session_state.api_key = api_key_input
+        # API Key 状态
+        api_key = get_api_key()
+        if api_key:
+            st.success("✅ API Key 已配置")
+        else:
+            st.error("❌ 未找到 API Key")
+            st.info("请确保环境变量 `COZE_WORKLOAD_IDENTITY_API_KEY` 或 Streamlit Secrets 已设置")
         
         # 权重设置
         st.subheader("匹配权重")
@@ -153,75 +162,6 @@ def render_header():
         if st.button("⚙️ 设置", use_container_width=True):
             st.session_state.show_sidebar = True
             st.rerun()
-
-
-def render_upload_section():
-    """渲染上传区域"""
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📄 简历上传区")
-        uploaded_file = st.file_uploader(
-            "拖拽文件或点击上传",
-            type=["docx", "txt"],
-            label_visibility="collapsed"
-        )
-        st.caption(f"支持: {', '.join(SUPPORTED_EXTENSIONS)} (最大 {MAX_FILE_SIZE_MB}MB)")
-        
-        resume_text = None
-        if uploaded_file is not None:
-            # 检查文件大小
-            file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
-            if file_size_mb > MAX_FILE_SIZE_MB:
-                st.error(f"❌ 文件过大 ({file_size_mb:.1f}MB)，请上传小于 {MAX_FILE_SIZE_MB}MB 的文件")
-                return None
-            
-            # 解析文件
-            try:
-                file_ext = "." + uploaded_file.name.split(".")[-1].lower()
-                resume_text = parse_file(uploaded_file.getvalue(), file_ext)
-                resume_text = clean_text(resume_text)
-                
-                st.success(f"✅ 已解析: {uploaded_file.name}")
-                with st.expander("预览简历内容"):
-                    st.text_area("", value=resume_text[:1000] + "..." if len(resume_text) > 1000 else resume_text, height=150, disabled=True)
-            except Exception as e:
-                st.error(f"❌ 解析失败: {str(e)}")
-                return None
-        
-        return resume_text
-    
-    with col2:
-        st.subheader("📝 JD 输入区")
-        
-        # JD 文件导入
-        jd_file = st.file_uploader(
-            "从文件导入 JD",
-            type=["docx", "txt"],
-            label_visibility="collapsed",
-            key="jd_file"
-        )
-        
-        jd_text = ""
-        if jd_file is not None:
-            try:
-                file_ext = "." + jd_file.name.split(".")[-1].lower()
-                jd_text = parse_file(jd_file.getvalue(), file_ext)
-                jd_text = clean_text(jd_text)
-                st.success(f"✅ 已导入: {jd_file.name}")
-            except Exception as e:
-                st.error(f"❌ 导入失败: {str(e)}")
-        
-        # JD 文本输入
-        jd_input = st.text_area(
-            "粘贴职位描述在此输入...",
-            value=jd_text,
-            height=200,
-            placeholder="在此粘贴职位描述（Job Description）...",
-            label_visibility="collapsed"
-        )
-        
-        return jd_input
 
 
 def render_result(result):
@@ -307,13 +247,19 @@ def main():
     else:
         # 默认收起侧边栏，但保留按钮
         with st.sidebar:
-            st.info("点击右上角「设置」按钮配置 API Key 和权重")
+            st.info("点击右上角「设置」按钮配置权重")
+            # 显示当前 Embedding 提供商
+            provider_label = "扣子内置 (Coze)" if EMBEDDING_PROVIDER == "coze" else "SiliconFlow"
+            st.caption(f"当前 Embedding: {provider_label}")
     
     # 渲染头部
     render_header()
     
     # 渲染上传区域
     col1, col2 = st.columns(2)
+    
+    resume_text = None
+    jd_text = ""
     
     with col1:
         st.subheader("📄 简历上传区")
@@ -325,7 +271,6 @@ def main():
         )
         st.caption(f"支持: {', '.join(SUPPORTED_EXTENSIONS)} (最大 {MAX_FILE_SIZE_MB}MB)")
         
-        resume_text = None
         if uploaded_file is not None:
             file_size_mb = len(uploaded_file.getvalue()) / (1024 * 1024)
             if file_size_mb > MAX_FILE_SIZE_MB:
@@ -380,8 +325,8 @@ def main():
         api_key = get_api_key()
         
         if not api_key:
-            st.error("❌ 请先配置 SiliconFlow API Key")
-            st.info("点击右上角「设置」按钮输入 API Key，或设置环境变量 SILICONFLOW_API_KEY")
+            st.error("❌ 未找到 API Key")
+            st.info("请确保环境变量 `COZE_WORKLOAD_IDENTITY_API_KEY` 或 Streamlit Secrets 已设置")
             return
         
         if not resume_text:
@@ -395,7 +340,7 @@ def main():
         with st.spinner("正在分析中，请稍候..."):
             try:
                 # 初始化 embedder 和 matcher
-                embedder = SiliconFlowEmbedder(api_key)
+                embedder = CozeEmbedder(api_key)
                 matcher = ResumeMatcher(embedder, st.session_state.weights)
                 
                 # 执行匹配

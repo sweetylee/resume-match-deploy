@@ -1,26 +1,34 @@
 """
-Embedding 模块 - SiliconFlow API 封装
+Embedding 模块 - 支持多种 Embedding 提供商
 """
+import os
 import requests
 import numpy as np
-from config import SILICONFLOW_API_URL, SILICONFLOW_EMBEDDING_MODEL
+from config import EMBEDDING_API_URL, EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, COZE_EMBEDDING_DIM
 
 
-class SiliconFlowEmbedder:
+class CozeEmbedder:
     """
-    SiliconFlow Embedding API 客户端
+    扣子 Embedding API 客户端（OpenAI 兼容格式）
     """
     
-    def __init__(self, api_key):
+    def __init__(self, api_key=None):
         """
         初始化
         
         Args:
-            api_key: SiliconFlow API Key
+            api_key: API Key，扣子模式下自动从环境变量获取
         """
-        self.api_key = api_key
-        self.api_url = f"{SILICONFLOW_API_URL}/embeddings"
-        self.model = SILICONFLOW_EMBEDDING_MODEL
+        # 扣子使用 COZE_WORKLOAD_IDENTITY_API_KEY
+        self.api_key = api_key or os.getenv("COZE_WORKLOAD_IDENTITY_API_KEY")
+        if not self.api_key:
+            raise ValueError("未找到 COZE_WORKLOAD_IDENTITY_API_KEY 环境变量")
+        
+        # 构建完整的 embedding URL
+        base_url = EMBEDDING_API_URL.rstrip('/')
+        self.api_url = f"{base_url}/embeddings"
+        self.model = EMBEDDING_MODEL
+        self.embedding_dim = COZE_EMBEDDING_DIM
     
     def embed(self, texts):
         """
@@ -44,17 +52,28 @@ class SiliconFlowEmbedder:
         else:
             single_input = False
         
-        # 过滤空文本
-        texts = [t.strip() if t else "" for t in texts]
+        # 过滤空文本并转换为 input 格式
+        inputs = []
+        for t in texts:
+            text = t.strip() if t else ""
+            if text:
+                inputs.append(text)
+        
+        if not inputs:
+            # 返回零向量
+            dim = self.embedding_dim
+            result = np.zeros((1, dim) if single_input else (len(texts), dim))
+            return result[0] if single_input else result
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
         
+        # OpenAI 兼容格式的 payload
         payload = {
             "model": self.model,
-            "input": texts,
+            "input": inputs,
             "encoding_format": "float"
         }
         
@@ -82,7 +101,7 @@ class SiliconFlowEmbedder:
             norms = np.where(norms == 0, 1, norms)  # 避免除零
             normalized_embeddings = embeddings / norms
             
-            if single_input:
+            if single_input and len(normalized_embeddings) == 1:
                 return normalized_embeddings[0]
             return normalized_embeddings
             
@@ -115,3 +134,7 @@ class SiliconFlowEmbedder:
             float: 余弦相似度 (-1 到 1)
         """
         return float(np.dot(embedding1, embedding2))
+
+
+# 为了兼容性，保留 SiliconFlowEmbedder 作为别名
+SiliconFlowEmbedder = CozeEmbedder
