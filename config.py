@@ -12,7 +12,8 @@ import os
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "coze")  # 默认使用扣子
 
 # 扣子 Embedding 配置（OpenAI 兼容格式）
-COZE_EMBEDDING_URL = os.getenv("COZE_INTEGRATION_MODEL_BASE_URL", "")
+# 扣子模型 API 基础 URL，用于 embedding 和对话模型
+COZE_MODEL_BASE_URL = os.getenv("COZE_INTEGRATION_MODEL_BASE_URL", "")
 COZE_EMBEDDING_MODEL = "doubao-embedding-vision-251215"
 COZE_EMBEDDING_DIM = 2048
 
@@ -23,7 +24,13 @@ SILICONFLOW_EMBEDDING_DIM = 1024
 
 # 根据提供商选择实际使用的配置
 if EMBEDDING_PROVIDER == "coze":
-    EMBEDDING_API_URL = COZE_EMBEDDING_URL
+    # 扣子模式：需要设置 COZE_INTEGRATION_MODEL_BASE_URL
+    # 格式类似: https://api.coze.cn/v1 或扣子编程提供的具体 URL
+    if COZE_MODEL_BASE_URL:
+        EMBEDDING_API_URL = COZE_MODEL_BASE_URL
+    else:
+        # 如果未设置，使用扣子默认的 API 地址（可能需要根据实际环境调整）
+        EMBEDDING_API_URL = "https://api.coze.cn/v1"
     EMBEDDING_MODEL = COZE_EMBEDDING_MODEL
     DEFAULT_EMBEDDING_DIM = COZE_EMBEDDING_DIM
 else:

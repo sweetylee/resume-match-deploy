@@ -12,6 +12,11 @@ class CozeEmbedder:
     扣子 Embedding API 客户端（OpenAI 兼容格式）
     """
     
+    # 每次请求的最大文本数量（避免 413 错误）
+    MAX_BATCH_SIZE = 8
+    # 每个文本的最大字符数
+    MAX_TEXT_LENGTH = 8000
+    
     def __init__(self, api_key=None):
         """
         初始化
@@ -30,40 +35,43 @@ class CozeEmbedder:
         self.model = EMBEDDING_MODEL
         self.embedding_dim = COZE_EMBEDDING_DIM
     
-    def embed(self, texts):
+    def _truncate_text(self, text, max_length=MAX_TEXT_LENGTH):
         """
-        获取文本的 embedding 向量
+        截断文本到最大长度
         
         Args:
-            texts: str 或 list of str，要编码的文本
+            text: 输入文本
+            max_length: 最大字符数
         
         Returns:
-            numpy.ndarray: embedding 向量
-            - 单文本: shape (dim,)
-            - 多文本: shape (n, dim)
-        
-        Raises:
-            Exception: API 调用失败
+            str: 截断后的文本
         """
-        # 统一处理为列表
-        if isinstance(texts, str):
-            texts = [texts]
-            single_input = True
-        else:
-            single_input = False
+        if not text:
+            return ""
+        if len(text) > max_length:
+            return text[:max_length]
+        return text
+    
+    def _embed_batch(self, texts):
+        """
+        批量获取 embedding（单批次）
         
-        # 过滤空文本并转换为 input 格式
+        Args:
+            texts: list of str，文本列表（长度不超过 MAX_BATCH_SIZE）
+        
+        Returns:
+            numpy.ndarray: embedding 矩阵 (n, dim)
+        """
+        # 过滤和截断文本
         inputs = []
         for t in texts:
             text = t.strip() if t else ""
             if text:
+                text = self._truncate_text(text)
                 inputs.append(text)
         
         if not inputs:
-            # 返回零向量
-            dim = self.embedding_dim
-            result = np.zeros((1, dim) if single_input else (len(texts), dim))
-            return result[0] if single_input else result
+            return np.zeros((len(texts), self.embedding_dim))
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -101,14 +109,51 @@ class CozeEmbedder:
             norms = np.where(norms == 0, 1, norms)  # 避免除零
             normalized_embeddings = embeddings / norms
             
-            if single_input and len(normalized_embeddings) == 1:
-                return normalized_embeddings[0]
             return normalized_embeddings
             
         except requests.exceptions.RequestException as e:
             raise Exception(f"API 请求失败: {str(e)}")
         except (KeyError, IndexError) as e:
             raise Exception(f"解析响应失败: {str(e)}")
+    
+    def embed(self, texts):
+        """
+        获取文本的 embedding 向量（支持大批量分块处理）
+        
+        Args:
+            texts: str 或 list of str，要编码的文本
+        
+        Returns:
+            numpy.ndarray: embedding 向量
+            - 单文本: shape (dim,)
+            - 多文本: shape (n, dim)
+        
+        Raises:
+            Exception: API 调用失败
+        """
+        # 统一处理为列表
+        if isinstance(texts, str):
+            texts = [texts]
+            single_input = True
+        else:
+            single_input = False
+        
+        # 分块处理，避免 413 错误
+        all_embeddings = []
+        for i in range(0, len(texts), self.MAX_BATCH_SIZE):
+            batch = texts[i:i + self.MAX_BATCH_SIZE]
+            batch_embeddings = self._embed_batch(batch)
+            all_embeddings.append(batch_embeddings)
+        
+        # 合并所有批次的 embedding
+        if len(all_embeddings) == 1:
+            embeddings = all_embeddings[0]
+        else:
+            embeddings = np.vstack(all_embeddings)
+        
+        if single_input and len(embeddings) == 1:
+            return embeddings[0]
+        return embeddings
     
     def embed_single(self, text):
         """
