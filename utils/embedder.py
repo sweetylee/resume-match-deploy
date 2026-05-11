@@ -15,10 +15,10 @@ class CozeEmbedder:
     
     # 每次只处理 1 个文本（最保守，避免 413）
     MAX_BATCH_SIZE = 1
-    # 每段最大字符数（SiliconFlow 限制约 4000-6000 tokens，保守设为 3000 字符）
-    CHUNK_SIZE = 3000
+    # 每段最大字符数（SiliconFlow 限制严格，设为 1000 字符）
+    CHUNK_SIZE = 1000
     # 段落重叠大小（保持上下文连贯性）
-    CHUNK_OVERLAP = 200
+    CHUNK_OVERLAP = 100
     
     def __init__(self, api_key=None):
         """
@@ -156,9 +156,9 @@ class CozeEmbedder:
         except requests.exceptions.RequestException as e:
             error_msg = str(e)
             if "413" in error_msg:
-                # 如果还报错，进一步截断
-                if len(text) > 1500:
-                    return self._embed_single_chunk(text[:1500])
+                # 如果还报错，进一步截断到 500 字符
+                if len(text) > 500:
+                    return self._embed_single_chunk(text[:500])
                 raise Exception(f"文本太长，请缩短内容 (413错误)")
             raise Exception(f"API 请求失败: {error_msg}")
     
